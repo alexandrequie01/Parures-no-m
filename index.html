@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Web GIS interactif</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<style>
+#map { height: 100vh; }
+.panel {
+  position:absolute;
+  top:10px;
+  left:10px;
+  background:white;
+  padding:10px;
+  border-radius:8px;
+  box-shadow:0 0 10px rgba(0,0,0,0.3);
+  font-family:sans-serif;
+}
+button { margin-top:5px; width:100%; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="panel">
+  <b>Filtrage</b><br>
+  <button onclick="resetMap()">Reset</button>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+
+var map = L.map('map').setView([45, 2], 6);
+
+// 🌄 Fond ESRI Shaded Relief
+L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles © Esri'
+}).addTo(map);
+
+let sitesData, structuresData, paruresData;
+let sitesLayer, structuresLayer, paruresLayer;
+
+function popupContent(props){
+  let html = "";
+  for (let key in props){
+    html += "<b>" + key + "</b>: " + props[key] + "<br>";
+  }
+  return html;
+}
+
+Promise.all([
+  fetch('sites.geojson').then(r=>r.json()),
+  fetch('structures.geojson').then(r=>r.json()),
+  fetch('parures.geojson').then(r=>r.json())
+]).then(([sites, structures, parures]) => {
+
+  sitesData = sites;
+  structuresData = structures;
+  paruresData = parures;
+
+  drawSites();
+  drawStructures(structures.features);
+  drawParures(parures.features);
+});
+
+function drawSites(){
+  if(sitesLayer) map.removeLayer(sitesLayer);
+
+  sitesLayer = L.geoJSON(sitesData,{
+    pointToLayer:(f,latlng)=>L.circleMarker(latlng,{
+      color:'red',
+      radius:6,
+      fillOpacity:0.8
+    }),
+    onEachFeature:(f,l)=>{
+      l.bindPopup(popupContent(f.properties));
+
+      l.on('click', ()=>{
+        let id = f.properties.id_site;
+
+        let filteredStructures = structuresData.features.filter(s =>
+          s.properties.id_site === id
+        );
+
+        drawStructures(filteredStructures);
+
+        let structIds = filteredStructures.map(s => s.properties.id_structure);
+
+        let filteredParures = paruresData.features.filter(p =>
+          structIds.includes(p.properties.id_structure)
+        );
+
+        drawParures(filteredParures);
+      });
+    }
+  }).addTo(map);
+}
+
+function drawStructures(features){
+  if(structuresLayer) map.removeLayer(structuresLayer);
+
+  structuresLayer = L.geoJSON(features,{
+    style:{color:'blue', weight:2},
+    onEachFeature:(f,l)=>{
+      l.bindPopup(popupContent(f.properties));
+
+      l.on('click', ()=>{
+        let id = f.properties.id_structure;
+
+        let filteredParures = paruresData.features.filter(p =>
+          p.properties.id_structure === id
+        );
+
+        drawParures(filteredParures);
+      });
+    }
+  }).addTo(map);
+}
+
+function drawParures(features){
+  if(paruresLayer) map.removeLayer(paruresLayer);
+
+  paruresLayer = L.geoJSON(features,{
+    style:{color:'green', weight:2},
+    onEachFeature:(f,l)=>l.bindPopup(popupContent(f.properties))
+  }).addTo(map);
+}
+
+function resetMap(){
+  drawSites();
+  drawStructures(structuresData.features);
+  drawParures(paruresData.features);
+}
+
+</script>
+
+</body>
+</html>
